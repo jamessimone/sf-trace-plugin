@@ -1,0 +1,40 @@
+{
+  "name": "sf-trace-plugin",
+  "description": "A plugin that allows you to update trace flags in a target salesforce org",
+  "version": "1.0.0",
+  "dependencies": {
+    "@oclif/core": "3.18.1",
+    "@salesforce/core": "6.4.7",
+    "@salesforce/sf-plugins-core": "7.1.3"
+  },
+  "devDependencies": {
+    "@types/chai": "4.3.12",
+    "@types/mocha": "10.0.6",
+    "chai": "5.1.0",
+    "oclif": "4.3.4",
+    "mocha": "10.3.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "force",
+    "salesforce",
+    "salesforcedx",
+    "sf",
+    "sf-plugin",
+    "sfdx",
+    "sfdx-plugin"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "build": "tsc -p . --pretty && git add .",
+    "link": "npm run build && npm run test && sf plugins link .",
+    "test": "mocha -c --full-trace"
+  },
+  "exports": "./lib/index.js",
+  "type": "module",
+  "author": "jamessimone"
+}

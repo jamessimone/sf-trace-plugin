@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "alwaysStrict": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "lib": ["ES2022"],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "noUnusedLocals": true,
+    "outDir": "lib",
+    "rootDir": "core",
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "target": "ES2022"
+  },
+  "include": ["./core/**/*"],
+  "exclude": ["node_modules/**/*"],
+  "ts-node": {
+    "esm": true
+  }
+}
