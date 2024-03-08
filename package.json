@@ -3,7 +3,6 @@
   "description": "A plugin that allows you to update trace flags in a target salesforce org",
   "version": "1.0.0",
   "dependencies": {
-    "@oclif/core": "3.18.1",
     "@salesforce/core": "6.4.7",
     "@salesforce/sf-plugins-core": "7.1.3"
   },
@@ -11,7 +10,6 @@
     "@types/chai": "4.3.12",
     "@types/mocha": "10.0.6",
     "chai": "5.1.0",
-    "oclif": "4.3.4",
     "mocha": "10.3.0",
     "ts-node": "10.9.2",
     "typescript": "5.3.3"
@@ -36,5 +34,5 @@
   },
   "exports": "./lib/index.js",
   "type": "module",
-  "author": "jamessimone"
+  "author": "James Simone <16430727+jamessimone@users.noreply.github.com>"
 }
