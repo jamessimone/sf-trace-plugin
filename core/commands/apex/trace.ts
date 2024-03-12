@@ -1,6 +1,10 @@
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
 
+import { ActualMapper, DependencyMapper } from '../../dependencies/dependencyMapper.js';
+
 export default class Trace extends SfCommand<void> {
+  public static dependencyMapper: DependencyMapper;
+
   public static readonly flags = {
     'target-org': Flags.requiredOrg({
       char: 'o',
@@ -11,8 +15,13 @@ export default class Trace extends SfCommand<void> {
   };
 
   public async run(): Promise<void> {
-    // Flags are only validated when this.parse is called
-    await this.parse(Trace);
+    if (!Trace.dependencyMapper) {
+      Trace.dependencyMapper = new ActualMapper(this.argv, this.config);
+    }
+
+    const { org } = await Trace.dependencyMapper.getDependencies(Trace);
+    this.log('Org connection: ' + JSON.stringify(org));
+
     throw new Error('Method not implemented.');
   }
 }
