@@ -17,6 +17,20 @@
   "engines": {
     "node": ">=18.0.0"
   },
+  "oclif": {
+    "commands": "./lib/commands",
+    "bin": "sf",
+    "topicSeparator": " ",
+    "devPlugins": [
+      "@oclif/plugin-help"
+    ],
+    "topics": {
+      "trace": {
+        "description": "Starts a TraceFlag"
+      }
+    },
+    "flexibleTaxonomy": true
+  },
   "keywords": [
     "force",
     "salesforce",
@@ -28,8 +42,8 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsc -p . --pretty && git add .",
-    "link": "npm run build && npm run test && sf plugins link .",
+    "build": "tsc -p . --pretty",
+    "link": "sf plugins link .",
     "test": "mocha -c --full-trace"
   },
   "exports": "./lib/index.js",

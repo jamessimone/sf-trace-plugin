@@ -1,38 +1,106 @@
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
+import { QueryResult } from 'jsforce';
+
+import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
 
 import { ActualMapper, DependencyMapper } from '../../dependencies/dependencyMapper.js';
+/**
+ * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
+ */
+const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
+const DEFAULT_LOG_TYPE = 'USER_DEBUG';
+const TRACE_SOBJECT_NAME = 'TraceFlag';
 
 export default class Trace extends SfCommand<void> {
   public static dependencyMapper: DependencyMapper;
 
   public static readonly flags = {
+    // TODO enable adding trace flags for ANY user as an optional arg AND for the autoproc user
     'target-org': Flags.requiredOrg({
       char: 'o',
       description: 'The org where the trace will be set',
       required: false,
       summary: 'The org where the trace will be set'
     }),
-    'debug-level': Flags.string({
+    'debug-level-name': Flags.string({
       char: 'l',
-      description: 'Accepted values are FINEST, FINER, FINE, DEBUG, INFO, WARN, ERROR',
-      default: 'DEBUG',
-      required: true,
-      summary: 'Conforms to the values found in the System.LoggingLevel enum'
+      description: 'The DeveloperName to use for the DebugLevel record',
+      default: DEFAULT_DEBUG_LEVEL_NAME,
+      required: false,
+      summary: 'Optional - the name of the DebugLevel record to use'
     }),
     'trace-duration': Flags.string({
       char: 'd',
-      description: 'Defaults to 1 hour, max of 24 hours. You can set duration in minutes (eg 30m) or in hours (eg 2h)',
+      description: 'How long the trace is active for',
       default: '1hr',
       required: false,
-      summary: 'How long the trace is active for'
+      summary: 'Defaults to 1 hour, max of 24 hours. You can set duration in minutes (eg 30m) or in hours (eg 2h)'
     })
-  };
+  } as ExpectedFlags;
 
   public async run(): Promise<void> {
     if (!Trace.dependencyMapper) {
       Trace.dependencyMapper = new ActualMapper(this.argv, this.config);
     }
 
+    const { debugLevelName, org, traceDuration } = await Trace.dependencyMapper.getDependencies(Trace);
+    const orgConnection = org.getConnection();
+    const [user, fallbackDebugLevelRes] = await Promise.all([
+      // TODO allow autoproc alias here, as well as configurable user names
+      orgConnection.singleRecordQuery<{ Id: string }>(
+        `SELECT Id FROM User WHERE Username = ${this.getQuotedQueryVar(org.getUsername())}`
+      ),
+      orgConnection.tooling.query(
+        `SELECT Id FROM DebugLevel WHERE DeveloperName = ${this.getQuotedQueryVar(debugLevelName)}`
+      )
+    ]);
+
+    const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
+    const existingTraceFlag = this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string }>(
+      await orgConnection.tooling.query(
+        `SELECT Id
+          FROM ${TRACE_SOBJECT_NAME}
+          WHERE LogType = ${this.getQuotedQueryVar(DEFAULT_LOG_TYPE)}
+          AND TracedEntityId = ${this.getQuotedQueryVar(user.Id)}
+          ORDER BY CreatedDate DESC
+          LIMIT 1
+        `
+      )
+    );
+
+    if (existingTraceFlag !== null) {
+      existingTraceFlag.StartDate = Date.now();
+      existingTraceFlag.ExpirationDate = this.getExpirationDate(
+        new Date(existingTraceFlag.StartDate),
+        traceDuration
+      ).getTime();
+      this.log('Updating trace flag, expires: ' + new Date(existingTraceFlag.ExpirationDate));
+      orgConnection.tooling.update(TRACE_SOBJECT_NAME, existingTraceFlag);
+    } else if (existingDebugLevel !== null) {
+      // TODO - handle the creation of a TraceFlag record instead
+    }
+  }
+
+  private getQuotedQueryVar(val: string): string {
+    return `'${val}'`;
+  }
+
+  private getSingleOrDefault<T>(toolingApiResult: QueryResult<T>) {
+    if (toolingApiResult.totalSize === 0) {
+      return null;
+    }
+    return toolingApiResult.records[0];
+  }
+
+  private getExpirationDate(startingDate: Date, durationExpression: string): Date {
+    const minutesInMilliseconds = 60 * 1000;
+    let durationModifier = 0;
+    if (durationExpression.endsWith('hr')) {
+      const hours = Number(durationExpression.slice(0, durationExpression.length - 2));
+      durationModifier = hours * 60 * minutesInMilliseconds;
+    }
+    return new Date(startingDate.getTime() + durationModifier);
+  }
     const { debugLevel, org } = await Trace.dependencyMapper.getDependencies(Trace);
     this.log('Org connection: ' + JSON.stringify(org));
     this.log(debugLevel);

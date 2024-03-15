@@ -1,4 +1,4 @@
-import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
+import { SfCommand } from '@salesforce/sf-plugins-core';
 import { ArgOutput, FlagOutput, Input } from '@oclif/core/lib/interfaces/parser.js';
 import { CustomOptions, OptionFlag } from '@oclif/core/lib/interfaces/parser.js';
 import { Org } from '@salesforce/core';
@@ -8,15 +8,15 @@ export interface DependencyMapper {
 }
 
 export type ExpectedFlags = {
-  'debug-level': OptionFlag<string, CustomOptions>;
+  'debug-level-name': OptionFlag<string, CustomOptions>;
   'target-org': OptionFlag<Org, CustomOptions>;
   'trace-duration': OptionFlag<string, CustomOptions>;
 };
 
 export type Dependencies = {
-  debugLevel: string;
+  debugLevelName: string;
   fallbackDebugLevelName?: string;
-  org: typeof Flags.requiredOrg;
+  org: Org;
   traceDuration: string;
 };
 
@@ -25,10 +25,10 @@ export class ActualMapper extends SfCommand<void> implements DependencyMapper {
     const passedFlags = options.flags as ExpectedFlags;
     const { flags } = await this.parse(options);
     return {
-      debugLevel: flags[passedFlags['debug-level'].name],
+      debugLevelName: flags[passedFlags['debug-level-name'].name],
       org: flags[passedFlags['target-org'].name],
       traceDuration: flags[passedFlags['trace-duration'].name]
-    } as Dependencies;
+    };
   }
   public async run() {}
 }
