@@ -12,9 +12,10 @@ type SalesforceRecord = {
 type TraceFlag = SalesforceRecord & { StartDate: number; ExpirationDate: number };
 
 class FakeDependencyMapper implements DependencyMapper {
-  public passedFlags: ExpectedFlags;
+  public isAutoprocTrace = false;
   public queriesMade: string[] = [];
-  public username = 'test@user.com';
+  public passedFlags: ExpectedFlags;
+  public username: string;
   public traceDuration: string;
 
   public matchingUser: SalesforceRecord = { Id: '005...' };
@@ -32,7 +33,7 @@ class FakeDependencyMapper implements DependencyMapper {
 
     return Promise.resolve({
       org: {
-        getUsername: () => this.username,
+        getUsername: () => 'test@user.com',
         getConnection: () => ({
           singleRecordQuery: (query: string) => {
             this.queriesMade.push(query);
@@ -57,16 +58,21 @@ class FakeDependencyMapper implements DependencyMapper {
         })
       } as unknown as Org,
       debugLevelName: 'someName',
-      traceDuration: this.traceDuration
+      isAutoprocTrace: this.isAutoprocTrace,
+      traceDuration: this.traceDuration,
+      targetUser: this.username
     });
   }
 }
 
 describe('trace plugin', () => {
-  it('passes the right flags', async () => {
-    const depMapper = new FakeDependencyMapper();
+  let depMapper: FakeDependencyMapper;
+  beforeEach(() => {
+    depMapper = new FakeDependencyMapper();
     Trace.dependencyMapper = depMapper;
+  });
 
+  it('passes the right flags', async () => {
     await Trace.run();
 
     const debugLevel: OptionFlag<string, CustomOptions> = depMapper.passedFlags['debug-level-name'];
@@ -86,14 +92,12 @@ describe('trace plugin', () => {
   });
 
   it('updates an existing trace flag for the current user with default duration', async () => {
-    const depMapper = new FakeDependencyMapper();
-    Trace.dependencyMapper = depMapper;
     const nowish = Date.now();
 
     await Trace.run();
 
     expect(depMapper.queriesMade.length).to.eq(3);
-    expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Username = '${depMapper.username}'`);
+    expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Username = 'test@user.com'`);
     expect(depMapper.queriesMade[1]).to.eq(
       `SELECT Id FROM DebugLevel WHERE DeveloperName = '${depMapper.matchingDebugLevel.DeveloperName}'`
     );
@@ -118,8 +122,6 @@ describe('trace plugin', () => {
   });
 
   it('updates an existing trace flag for the current user with minute duration', async () => {
-    const depMapper = new FakeDependencyMapper();
-    Trace.dependencyMapper = depMapper;
     depMapper.traceDuration = '15m';
     const nowish = Date.now();
 
@@ -135,8 +137,6 @@ describe('trace plugin', () => {
   });
 
   it('sets a max of 24 hours tracing time when more than that is passed in as the trace duration', async () => {
-    const depMapper = new FakeDependencyMapper();
-    Trace.dependencyMapper = depMapper;
     depMapper.traceDuration = '50hr';
     const nowish = Date.now();
 
@@ -149,5 +149,21 @@ describe('trace plugin', () => {
     nowishDate.setSeconds(0);
     nowishDate.setMilliseconds(0);
     expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60 * 24);
+  });
+
+  it('allows another user to be set instead of the current running user', async () => {
+    depMapper.username = 'someotheruser@test.com';
+
+    await Trace.run();
+
+    expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Username = '${depMapper.username}'`);
+  });
+
+  it('correctly queries the autoproc user when boolean flag is supplied', async () => {
+    depMapper.isAutoprocTrace = true;
+
+    await Trace.run();
+
+    expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Alias = 'autoproc'`);
   });
 });
