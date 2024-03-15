@@ -3,7 +3,14 @@ import { QueryResult } from 'jsforce';
 
 import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
 
-import { ActualMapper, DependencyMapper } from '../../dependencies/dependencyMapper.js';
+// const xmlCharMap: { [index: string]: string } = {
+//   '<': '&lt;',
+//   '>': '&gt;',
+//   '&': '&amp;',
+//   '"': '&quot;',
+//   "'": '&apos;'
+// };
+
 /**
  * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
  */
@@ -98,11 +105,19 @@ export default class Trace extends SfCommand<void> {
     if (durationExpression.endsWith('hr')) {
       const hours = Number(durationExpression.slice(0, durationExpression.length - 2));
       durationModifier = hours * 60 * minutesInMilliseconds;
+    } else if (durationExpression.endsWith('m')) {
+      durationModifier = Number(durationExpression.slice(0, durationExpression.length - 1)) * minutesInMilliseconds;
     }
-    return new Date(startingDate.getTime() + durationModifier);
+    let expirationDate = new Date(startingDate.getTime() + durationModifier);
+    const twentyFourHoursInMilliseconds = 24 * 60 * 60 * 1000;
+    if (expirationDate.getTime() - startingDate.getTime() > twentyFourHoursInMilliseconds) {
+      expirationDate = new Date(startingDate.getTime() + twentyFourHoursInMilliseconds);
+    }
+    return expirationDate;
   }
-    const { debugLevel, org } = await Trace.dependencyMapper.getDependencies(Trace);
-    this.log('Org connection: ' + JSON.stringify(org));
-    this.log(debugLevel);
-  }
+
+  // from https://github.com/forcedotcom/salesforcedx-apex/blob/main/src/utils/authUtil.ts
+  // private static escapeXml(data: string): string {
+  //   return data.replace(/[<>&'"]/g, char => xmlCharMap[char]);
+  // }
 }

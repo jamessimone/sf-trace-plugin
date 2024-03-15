@@ -15,6 +15,7 @@ class FakeDependencyMapper implements DependencyMapper {
   public passedFlags: ExpectedFlags;
   public queriesMade: string[] = [];
   public username = 'test@user.com';
+  public traceDuration: string;
 
   public matchingUser: SalesforceRecord = { Id: '005...' };
   public matchingDebugLevel: SalesforceRecord & { DeveloperName: string } = {
@@ -27,6 +28,7 @@ class FakeDependencyMapper implements DependencyMapper {
 
   getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<Dependencies> {
     this.passedFlags = options.flags as ExpectedFlags;
+    this.traceDuration = this.traceDuration ?? this.passedFlags['trace-duration'].default.toString();
 
     return Promise.resolve({
       org: {
@@ -55,7 +57,7 @@ class FakeDependencyMapper implements DependencyMapper {
         })
       } as unknown as Org,
       debugLevelName: 'someName',
-      traceDuration: '1hr'
+      traceDuration: this.traceDuration
     });
   }
 }
@@ -83,7 +85,7 @@ describe('trace plugin', () => {
     expect(traceDuration.default).to.eq('1hr');
   });
 
-  it('gets an existing trace flag back for the current user', async () => {
+  it('updates an existing trace flag for the current user with default duration', async () => {
     const depMapper = new FakeDependencyMapper();
     Trace.dependencyMapper = depMapper;
     const nowish = Date.now();
@@ -98,8 +100,7 @@ describe('trace plugin', () => {
     expect(depMapper.queriesMade[2]).to.eq(
       `SELECT Id
           FROM TraceFlag
-          WHERE DebugLevelId = '${depMapper.matchingDebugLevel.Id}'
-          AND LogType = "USER_DEBUG"
+          WHERE LogType = 'USER_DEBUG'
           AND TracedEntityId = '${depMapper.matchingUser.Id}'
           ORDER BY CreatedDate DESC
           LIMIT 1
@@ -114,5 +115,39 @@ describe('trace plugin', () => {
     nowishDate.setSeconds(0);
     nowishDate.setMilliseconds(0);
     expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60);
+  });
+
+  it('updates an existing trace flag for the current user with minute duration', async () => {
+    const depMapper = new FakeDependencyMapper();
+    Trace.dependencyMapper = depMapper;
+    depMapper.traceDuration = '15m';
+    const nowish = Date.now();
+
+    await Trace.run();
+
+    const expirationate = new Date(depMapper.updatedTraceFlag.ExpirationDate);
+    expirationate.setSeconds(0);
+    expirationate.setMilliseconds(0);
+    const nowishDate = new Date(nowish);
+    nowishDate.setSeconds(0);
+    nowishDate.setMilliseconds(0);
+    expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 15 * 60);
+  });
+
+  it('sets a max of 24 hours tracing time when more than that is passed in as the trace duration', async () => {
+    const depMapper = new FakeDependencyMapper();
+    Trace.dependencyMapper = depMapper;
+    depMapper.traceDuration = '50hr';
+    const nowish = Date.now();
+
+    await Trace.run();
+
+    const expirationate = new Date(depMapper.updatedTraceFlag.ExpirationDate);
+    expirationate.setSeconds(0);
+    expirationate.setMilliseconds(0);
+    const nowishDate = new Date(nowish);
+    nowishDate.setSeconds(0);
+    nowishDate.setMilliseconds(0);
+    expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60 * 24);
   });
 });
