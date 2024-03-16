@@ -1,5 +1,6 @@
+import { Connection, SfError } from '@salesforce/core';
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
-import { QueryResult } from 'jsforce';
+import { QueryResult, Record } from 'jsforce';
 
 import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
 
@@ -22,7 +23,6 @@ export default class Trace extends SfCommand<void> {
   public static dependencyMapper: DependencyMapper;
 
   public static readonly flags = {
-    // TODO enable adding trace flags for ANY user as an optional arg AND for the autoproc user
     'debug-level-name': Flags.string({
       char: 'l',
       description: 'The DeveloperName to use for the DebugLevel record',
@@ -33,8 +33,8 @@ export default class Trace extends SfCommand<void> {
     'is-autoproc-trace': Flags.boolean({
       char: 'a',
       description: 'Is the trace for the Automated Process User?',
-      default: false,
       relationships: [{ type: 'none', flags: ['target-user'] }],
+      required: false,
       summary: 'Optional - should the trace be set for the Automated Process User?'
     }),
     'target-org': Flags.requiredOrg({
@@ -68,26 +68,13 @@ export default class Trace extends SfCommand<void> {
       await Trace.dependencyMapper.getDependencies(Trace);
     const orgConnection = org.getConnection();
 
-    let traceUser = Trace.escapeXml(targetUser ?? '');
-    let whereField = 'Username';
-    if (!traceUser) {
-      traceUser = org.getUsername();
-    }
-    if (isAutoprocTrace) {
-      traceUser = 'autoproc';
-      whereField = 'Alias';
-    }
+    const { existingDebugLevel, traceUser, user } = await this.getStartupInfo(
+      debugLevelName,
+      isAutoprocTrace,
+      orgConnection,
+      targetUser
+    );
 
-    const [user, fallbackDebugLevelRes] = await Promise.all([
-      orgConnection.singleRecordQuery<{ Id: string }>(
-        `SELECT Id FROM User WHERE ${whereField} = ${this.getQuotedQueryVar(traceUser)}`
-      ),
-      orgConnection.tooling.query(
-        `SELECT Id FROM DebugLevel WHERE DeveloperName = ${this.getQuotedQueryVar(Trace.escapeXml(debugLevelName))}`
-      )
-    ]);
-
-    const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
     const existingTraceFlag = this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string }>(
       await orgConnection.tooling.query(
         `SELECT Id
@@ -100,24 +87,63 @@ export default class Trace extends SfCommand<void> {
       )
     );
 
-    if (existingTraceFlag !== null) {
-      existingTraceFlag.StartDate = Date.now();
-      existingTraceFlag.ExpirationDate = this.getExpirationDate(
-        new Date(existingTraceFlag.StartDate),
-        traceDuration
-      ).getTime();
-      this.log('Updating trace flag, expires: ' + new Date(existingTraceFlag.ExpirationDate));
-      orgConnection.tooling.update(TRACE_SOBJECT_NAME, existingTraceFlag);
+    const baseTraceFlag = { StartDate: Date.now(), ExpirationDate: 0, Id: existingTraceFlag?.Id } as Record;
+    baseTraceFlag.ExpirationDate = this.getExpirationDate(new Date(baseTraceFlag.StartDate), traceDuration).getTime();
+
+    if (baseTraceFlag.Id) {
+      this.log(`Updating TraceFlag for ${traceUser}, expires: ${new Date(baseTraceFlag.ExpirationDate)}`);
+      orgConnection.tooling.update(TRACE_SOBJECT_NAME, baseTraceFlag);
     } else if (existingDebugLevel !== null) {
-      // TODO - handle the creation of a TraceFlag record instead
+      this.log(
+        `No matching TraceFlag for user: ${traceUser}, setting one up using debug level ${existingDebugLevel}, expires: ${new Date(
+          baseTraceFlag.ExpirationDate
+        )}}`
+      );
+      orgConnection.tooling.create(TRACE_SOBJECT_NAME, {
+        ...baseTraceFlag,
+        DebugLevelId: existingDebugLevel.Id,
+        LogType: DEFAULT_LOG_TYPE,
+        TracedEntityId: user.Id
+      });
     }
+  }
+
+  private async getStartupInfo(
+    debugLevelName: string,
+    isAutoprocTrace: boolean,
+    orgConnection: Connection,
+    targetUser?: string
+  ) {
+    let traceUser = Trace.escapeXml(targetUser);
+    let whereField = 'Username';
+    if (!traceUser) {
+      traceUser = orgConnection.getUsername() as string;
+    }
+    if (isAutoprocTrace) {
+      traceUser = 'autoproc';
+      whereField = 'Alias';
+    }
+
+    const [user, fallbackDebugLevelRes] = await Promise.all([
+      orgConnection.singleRecordQuery<{ Id: string }>(
+        `SELECT Id FROM User WHERE ${whereField} = ${this.getQuotedQueryVar(traceUser)}`
+      ),
+      orgConnection.tooling.query(
+        `SELECT Id, DeveloperName FROM DebugLevel WHERE DeveloperName = ${this.getQuotedQueryVar(
+          Trace.escapeXml(debugLevelName)
+        )}`
+      )
+    ]);
+
+    const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
+    return { existingDebugLevel, traceUser, user };
   }
 
   private getQuotedQueryVar(val: string): string {
     return `'${val}'`;
   }
 
-  private getSingleOrDefault<T>(toolingApiResult: QueryResult<T>) {
+  private getSingleOrDefault<T extends Record>(toolingApiResult: QueryResult<T>) {
     if (toolingApiResult.totalSize === 0) {
       return null;
     }
@@ -132,6 +158,8 @@ export default class Trace extends SfCommand<void> {
       durationModifier = hours * 60 * minutesInMilliseconds;
     } else if (durationExpression.endsWith('m')) {
       durationModifier = Number(durationExpression.slice(0, durationExpression.length - 1)) * minutesInMilliseconds;
+    } else {
+      throw new SfError(`Invalid duration "${durationExpression}" supplied`);
     }
     let expirationDate = new Date(startingDate.getTime() + durationModifier);
     const twentyFourHoursInMilliseconds = 24 * 60 * 60 * 1000;
@@ -142,7 +170,7 @@ export default class Trace extends SfCommand<void> {
   }
 
   // from https://github.com/forcedotcom/salesforcedx-apex/blob/main/src/utils/authUtil.ts
-  private static escapeXml(data: string): string {
-    return data.replace(/[<>&'"]/g, char => xmlCharMap[char]);
+  private static escapeXml(data: string | undefined) {
+    return data ? data.replace(/[<>&'"]/g, char => xmlCharMap[char]) : '';
   }
 }

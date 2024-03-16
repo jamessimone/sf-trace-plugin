@@ -17,7 +17,6 @@ export type ExpectedFlags = {
 
 export type Dependencies = {
   debugLevelName: string;
-  fallbackDebugLevelName?: string;
   isAutoprocTrace: boolean;
   org: Org;
   traceDuration: string;

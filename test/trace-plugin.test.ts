@@ -1,5 +1,13 @@
 import { expect } from 'chai';
-import { ArgOutput, CustomOptions, FlagOutput, Input, OptionFlag } from '@oclif/core/lib/interfaces/parser.js';
+import {
+  ArgOutput,
+  BooleanFlag,
+  CustomOptions,
+  FlagOutput,
+  Input,
+  OptionFlag,
+  Relationship
+} from '@oclif/core/lib/interfaces/parser.js';
 import { Org } from '@salesforce/core';
 
 import { Dependencies, DependencyMapper, ExpectedFlags } from '../core/dependencies/dependencyMapper.js';
@@ -23,32 +31,36 @@ class FakeDependencyMapper implements DependencyMapper {
     DeveloperName: 'someName',
     Id: '7dl....'
   };
-  public matchingTraceFlag: SalesforceRecord = { Id: '7tf...' };
+  public matchingTraceFlag: SalesforceRecord | undefined = { Id: '7tf...' };
   public updatedSObjectName: string;
   public updatedTraceFlag: TraceFlag;
 
   getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<Dependencies> {
     this.passedFlags = options.flags as ExpectedFlags;
-    this.traceDuration = this.traceDuration ?? this.passedFlags['trace-duration'].default.toString();
+    this.traceDuration = this.traceDuration ?? this.passedFlags['trace-duration'].default?.toString();
 
     return Promise.resolve({
       org: {
-        getUsername: () => 'test@user.com',
         getConnection: () => ({
+          getUsername: () => 'test@user.com',
           singleRecordQuery: (query: string) => {
             this.queriesMade.push(query);
             return this.matchingUser;
           },
           tooling: {
+            create: (sObjectName: string, record: TraceFlag) => {
+              this.updatedSObjectName = sObjectName;
+              this.updatedTraceFlag = record;
+            },
             query: (query: string) => {
               this.queriesMade.push(query);
-              let matchingRecord = null;
+              let matchingRecord = {} as object | undefined;
               if (query.indexOf('FROM DebugLevel') > -1) {
                 matchingRecord = this.matchingDebugLevel;
               } else if (query.indexOf('FROM TraceFlag') > -1) {
                 matchingRecord = this.matchingTraceFlag;
               }
-              return { totalSize: 1, records: matchingRecord ? [matchingRecord] : null };
+              return { totalSize: matchingRecord ? 1 : 0, records: matchingRecord ? [matchingRecord] : null };
             },
             update: (sObjectName: string, record: TraceFlag) => {
               this.updatedSObjectName = sObjectName;
@@ -76,19 +88,32 @@ describe('trace plugin', () => {
     await Trace.run();
 
     const debugLevel: OptionFlag<string, CustomOptions> = depMapper.passedFlags['debug-level-name'];
-    expect(debugLevel).not.to.equal(undefined);
     expect(debugLevel.required).to.be.false;
     expect(debugLevel.char).to.eq('l');
     expect(debugLevel.default).to.eq('SFDC_DevConsole');
-    const targetOrg: OptionFlag<Org, CustomOptions> = depMapper.passedFlags['target-org'];
-    expect(targetOrg).not.to.equal(undefined);
-    expect(targetOrg.required).to.be.false;
-    expect(targetOrg.char).to.eq('o');
+
+    const isAutoprocTrace: BooleanFlag<CustomOptions> = depMapper.passedFlags['is-autoproc-trace'];
+    expect(isAutoprocTrace.required).to.be.false;
+    expect(isAutoprocTrace.char).to.eq('a');
+    const autoprocRelationship = (isAutoprocTrace.relationships ?? [{}])[0] as Relationship;
+    expect(autoprocRelationship.flags[0]).to.eql('target-user');
+    expect(autoprocRelationship.type).to.eql('none');
+
     const traceDuration: OptionFlag<string, CustomOptions> = depMapper.passedFlags['trace-duration'];
-    expect(traceDuration).not.to.equal(undefined);
     expect(traceDuration.required).to.be.false;
     expect(traceDuration.char).to.eq('d');
     expect(traceDuration.default).to.eq('1hr');
+
+    const targetOrg: OptionFlag<Org, CustomOptions> = depMapper.passedFlags['target-org'];
+    expect(targetOrg.required).to.be.false;
+    expect(targetOrg.char).to.eq('o');
+
+    const targetUser: OptionFlag<string, CustomOptions> = depMapper.passedFlags['target-user'];
+    expect(targetUser.char).to.eq('u');
+    expect(targetUser.required).to.false;
+    const targetUserRelationship = (targetUser.relationships ?? [{}])[0] as Relationship;
+    expect(targetUserRelationship.flags[0]).to.eql('is-autoproc-trace');
+    expect(targetUserRelationship.type).to.eql('none');
   });
 
   it('updates an existing trace flag for the current user with default duration', async () => {
@@ -151,6 +176,20 @@ describe('trace plugin', () => {
     expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60 * 24);
   });
 
+  it('throws an error for invalid durations', async () => {
+    depMapper.traceDuration = '50';
+    let err: Error;
+
+    try {
+      await Trace.run();
+      err = new Error('Fail');
+    } catch (error: unknown) {
+      err = error as Error;
+    }
+
+    expect(err.message).to.eq('Invalid duration "50" supplied');
+  });
+
   it('allows another user to be set instead of the current running user', async () => {
     depMapper.username = 'someotheruser@test.com';
 
@@ -165,5 +204,14 @@ describe('trace plugin', () => {
     await Trace.run();
 
     expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Alias = 'autoproc'`);
+  });
+
+  it('creates new TraceFlag when an existing one is not available', async () => {
+    depMapper.matchingTraceFlag = undefined;
+
+    await Trace.run();
+
+    expect(depMapper.updatedSObjectName).to.eq('TraceFlag');
+    expect(depMapper.updatedTraceFlag).not.to.be.undefined;
   });
 });
