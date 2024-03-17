@@ -4,7 +4,7 @@ import { QueryResult, Record } from 'jsforce';
 
 import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
 
-const xmlCharMap: { [index: string]: string } = {
+const XML_CHAR_MAP: { [index: string]: string } = {
   '<': '&lt;',
   '>': '&gt;',
   '&': '&amp;',
@@ -95,9 +95,9 @@ export default class Trace extends SfCommand<void> {
       orgConnection.tooling.update(TRACE_SOBJECT_NAME, baseTraceFlag);
     } else if (existingDebugLevel !== null) {
       this.log(
-        `No matching TraceFlag for user: ${traceUser}, setting one up using debug level ${existingDebugLevel}, expires: ${new Date(
-          baseTraceFlag.ExpirationDate
-        )}}`
+        `No matching TraceFlag for user: ${traceUser}, setting one up using debug level: ${JSON.stringify(
+          existingDebugLevel
+        )}, expires: ${new Date(baseTraceFlag.ExpirationDate)}}`
       );
       orgConnection.tooling.create(TRACE_SOBJECT_NAME, {
         ...baseTraceFlag,
@@ -133,13 +133,27 @@ export default class Trace extends SfCommand<void> {
           Trace.escapeXml(debugLevelName)
         )}`
       )
-    ]);
+    ]).catch(() => {
+      // "singleRecordQuery" isn't Promise-like, so we can't add .catch() to it directly
+      // but it throws when no matching records are found. We'll handle that outcome below
+      return Promise.resolve([]);
+    });
+
+    if (!user?.Id) {
+      throw new SfError(`User not found: ${traceUser}`);
+    }
 
     const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
+    if (!existingDebugLevel?.Id) {
+      throw new SfError(`DebugLevel not found: ${debugLevelName}`);
+    }
     return { existingDebugLevel, traceUser, user };
   }
 
-  private getQuotedQueryVar(val: string): string {
+  private getQuotedQueryVar(val: string | undefined): string {
+    if (!val) {
+      throw new SfError('Cannot query an undefined value');
+    }
     return `'${val}'`;
   }
 
@@ -171,6 +185,6 @@ export default class Trace extends SfCommand<void> {
 
   // from https://github.com/forcedotcom/salesforcedx-apex/blob/main/src/utils/authUtil.ts
   private static escapeXml(data: string | undefined) {
-    return data ? data.replace(/[<>&'"]/g, char => xmlCharMap[char]) : '';
+    return data ? data.replace(/[<>&'"]/g, char => XML_CHAR_MAP[char]) : '';
   }
 }

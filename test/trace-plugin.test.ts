@@ -26,8 +26,8 @@ class FakeDependencyMapper implements DependencyMapper {
   public username: string;
   public traceDuration: string;
 
-  public matchingUser: SalesforceRecord = { Id: '005...' };
-  public matchingDebugLevel: SalesforceRecord & { DeveloperName: string } = {
+  public matchingUser: SalesforceRecord | undefined = { Id: '005...' };
+  public matchingDebugLevel: (SalesforceRecord & { DeveloperName: string }) | undefined = {
     DeveloperName: 'someName',
     Id: '7dl....'
   };
@@ -124,13 +124,13 @@ describe('trace plugin', () => {
     expect(depMapper.queriesMade.length).to.eq(3);
     expect(depMapper.queriesMade[0]).to.eq(`SELECT Id FROM User WHERE Username = 'test@user.com'`);
     expect(depMapper.queriesMade[1]).to.eq(
-      `SELECT Id FROM DebugLevel WHERE DeveloperName = '${depMapper.matchingDebugLevel.DeveloperName}'`
+      `SELECT Id, DeveloperName FROM DebugLevel WHERE DeveloperName = '${depMapper.matchingDebugLevel?.DeveloperName}'`
     );
     expect(depMapper.queriesMade[2]).to.eq(
       `SELECT Id
           FROM TraceFlag
           WHERE LogType = 'USER_DEBUG'
-          AND TracedEntityId = '${depMapper.matchingUser.Id}'
+          AND TracedEntityId = '${depMapper.matchingUser?.Id}'
           ORDER BY CreatedDate DESC
           LIMIT 1
         `
@@ -213,5 +213,33 @@ describe('trace plugin', () => {
 
     expect(depMapper.updatedSObjectName).to.eq('TraceFlag');
     expect(depMapper.updatedTraceFlag).not.to.be.undefined;
+  });
+
+  it('throws an error for invalid user', async () => {
+    depMapper.matchingUser = undefined;
+    let err: Error;
+
+    try {
+      await Trace.run();
+      err = new Error('Fail');
+    } catch (error: unknown) {
+      err = error as Error;
+    }
+
+    expect(err.message).to.eq(`User not found: test@user.com`);
+  });
+
+  it('throws an error for invalid debug level', async () => {
+    depMapper.matchingDebugLevel = undefined;
+    let err: Error;
+
+    try {
+      await Trace.run();
+      err = new Error('Fail');
+    } catch (error: unknown) {
+      err = error as Error;
+    }
+
+    expect(err.message).to.eq(`DebugLevel not found: someName`);
   });
 });
