@@ -76,7 +76,12 @@ export default class Trace extends SfCommand<void> {
 
     const existingTraceFlag = await this.getExistingTrace(user, orgConnection);
 
-    const baseTraceFlag = { StartDate: Date.now(), ExpirationDate: 0, Id: existingTraceFlag?.Id } as Record;
+    const baseTraceFlag = {
+      DebugLevelId: existingDebugLevel.Id,
+      ExpirationDate: 0,
+      Id: existingTraceFlag?.Id,
+      StartDate: Date.now()
+    } as Record;
     baseTraceFlag.ExpirationDate = this.getExpirationDate(new Date(baseTraceFlag.StartDate), traceDuration).getTime();
     await this.createOrUpdateTrace(baseTraceFlag, user, orgConnection, existingDebugLevel);
   }
@@ -189,7 +194,6 @@ export default class Trace extends SfCommand<void> {
       );
       await orgConnection.tooling.create(TRACE_SOBJECT_NAME, {
         ...baseTraceFlag,
-        DebugLevelId: existingDebugLevel.Id,
         LogType: DEFAULT_LOG_TYPE,
         TracedEntityId: user.Id
       });

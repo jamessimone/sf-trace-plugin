@@ -17,7 +17,7 @@ type SalesforceRecord = {
   Id: string;
 };
 
-type TraceFlag = SalesforceRecord & { StartDate: number; ExpirationDate: number };
+type TraceFlag = SalesforceRecord & { DebugLevelId: string | undefined; ExpirationDate: number; StartDate: number };
 
 class FakeDependencyMapper implements DependencyMapper {
   public isAutoprocTrace = false;
@@ -213,6 +213,7 @@ describe('trace plugin', () => {
 
     expect(depMapper.updatedSObjectName).to.eq('TraceFlag');
     expect(depMapper.updatedTraceFlag).not.to.be.undefined;
+    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel?.Id);
   });
 
   it('throws an error for invalid user', async () => {
@@ -241,5 +242,13 @@ describe('trace plugin', () => {
     }
 
     expect(err.message).to.eq(`DebugLevel not found: someName`);
+  });
+
+  it('updates the existing debug level for an active trace', async () => {
+    depMapper.matchingDebugLevel = { Id: '7dl000000000', DeveloperName: 'Some Other Debug Level' };
+
+    await Trace.run();
+
+    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel.Id);
   });
 });
