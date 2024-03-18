@@ -13,7 +13,7 @@ echo y | sf plugins install james.simone/sf-trace-plugin
 Or by adding `sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_allowlist.htm):
 
 ```json
-["sf-trace-plugin"]
+["jamessimone/sf-trace-plugin"]
 ```
 
 And then running:
