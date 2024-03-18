@@ -10,7 +10,7 @@ It can be installed by running:
 echo y | sf plugins install @james.simone/sf-trace-plugin
 ```
 
-Or by adding `james.simone/sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_allowlist.htm):
+Or by adding `sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_allowlist.htm):
 
 ```json
 ["sf-trace-plugin"]
@@ -29,6 +29,25 @@ sf plugins install https://github.com/jamessimone/sf-trace-plugin
 ```
 
 ## Usage
+
+By default, you can run the plugin without arguments to start a one hour trace for your user in your currently authenticated org:
+
+```bash
+sf apex trace
+```
+
+Different command line flags allow you to augment this functionality, stipulating a minute or hour time frame:
+
+```bash
+# sets a 30 minute trace on the Automated Process User
+sf apex trace --trace-duration 30m --is-autoproc-trace
+# sets a 2 hour trace on another user
+sf apex trace --trace-duration 2hr --target-user someOtherUser@salesforce.com
+```
+
+The API for the allowable flags is delineated below.
+
+### Command Line Flags
 
 This plugin currently supports the following flags:
 

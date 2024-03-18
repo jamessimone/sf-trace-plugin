@@ -4,6 +4,12 @@ import { QueryResult, Record } from 'jsforce';
 
 import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
 
+/**
+ * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
+ */
+const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
+const DEFAULT_LOG_TYPE = 'USER_DEBUG';
+const TRACE_SOBJECT_NAME = 'TraceFlag';
 const XML_CHAR_MAP: { [index: string]: string } = {
   '<': '&lt;',
   '>': '&gt;',
@@ -11,13 +17,6 @@ const XML_CHAR_MAP: { [index: string]: string } = {
   '"': '&quot;',
   "'": '&apos;'
 };
-
-/**
- * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
- */
-const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
-const DEFAULT_LOG_TYPE = 'USER_DEBUG';
-const TRACE_SOBJECT_NAME = 'TraceFlag';
 
 export default class Trace extends SfCommand<void> {
   public static dependencyMapper: DependencyMapper;
@@ -68,44 +67,18 @@ export default class Trace extends SfCommand<void> {
       await Trace.dependencyMapper.getDependencies(Trace);
     const orgConnection = org.getConnection();
 
-    const { existingDebugLevel, traceUser, user } = await this.getStartupInfo(
+    const { existingDebugLevel, user } = await this.getStartupInfo(
       debugLevelName,
       isAutoprocTrace,
       orgConnection,
       targetUser
     );
 
-    const existingTraceFlag = this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string }>(
-      await orgConnection.tooling.query(
-        `SELECT Id
-          FROM ${TRACE_SOBJECT_NAME}
-          WHERE LogType = ${this.getQuotedQueryVar(DEFAULT_LOG_TYPE)}
-          AND TracedEntityId = ${this.getQuotedQueryVar(user.Id)}
-          ORDER BY CreatedDate DESC
-          LIMIT 1
-        `
-      )
-    );
+    const existingTraceFlag = await this.getExistingTrace(user, orgConnection);
 
     const baseTraceFlag = { StartDate: Date.now(), ExpirationDate: 0, Id: existingTraceFlag?.Id } as Record;
     baseTraceFlag.ExpirationDate = this.getExpirationDate(new Date(baseTraceFlag.StartDate), traceDuration).getTime();
-
-    if (baseTraceFlag.Id) {
-      this.log(`Updating TraceFlag for ${traceUser}, expires: ${new Date(baseTraceFlag.ExpirationDate)}`);
-      orgConnection.tooling.update(TRACE_SOBJECT_NAME, baseTraceFlag);
-    } else if (existingDebugLevel !== null) {
-      this.log(
-        `No matching TraceFlag for user: ${traceUser}, setting one up using debug level: ${JSON.stringify(
-          existingDebugLevel
-        )}, expires: ${new Date(baseTraceFlag.ExpirationDate)}}`
-      );
-      orgConnection.tooling.create(TRACE_SOBJECT_NAME, {
-        ...baseTraceFlag,
-        DebugLevelId: existingDebugLevel.Id,
-        LogType: DEFAULT_LOG_TYPE,
-        TracedEntityId: user.Id
-      });
-    }
+    await this.createOrUpdateTrace(baseTraceFlag, user, orgConnection, existingDebugLevel);
   }
 
   private async getStartupInfo(
@@ -125,7 +98,7 @@ export default class Trace extends SfCommand<void> {
     }
 
     const [user, fallbackDebugLevelRes] = await Promise.all([
-      orgConnection.singleRecordQuery<{ Id: string }>(
+      orgConnection.singleRecordQuery<Record>(
         `SELECT Id FROM User WHERE ${whereField} = ${this.getQuotedQueryVar(traceUser)}`
       ),
       orgConnection.tooling.query(
@@ -141,13 +114,15 @@ export default class Trace extends SfCommand<void> {
 
     if (!user?.Id) {
       throw new SfError(`User not found: ${traceUser}`);
+    } else {
+      user.Username = traceUser;
     }
 
     const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
     if (!existingDebugLevel?.Id) {
       throw new SfError(`DebugLevel not found: ${debugLevelName}`);
     }
-    return { existingDebugLevel, traceUser, user };
+    return { existingDebugLevel, user } as { existingDebugLevel: Record; user: Record & { Username: string } };
   }
 
   private getQuotedQueryVar(val: string | undefined): string {
@@ -164,14 +139,28 @@ export default class Trace extends SfCommand<void> {
     return toolingApiResult.records[0];
   }
 
+  private async getExistingTrace(user: Record, orgConnection: Connection) {
+    return this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string }>(
+      await orgConnection.tooling.query(
+        `SELECT Id
+          FROM ${TRACE_SOBJECT_NAME}
+          WHERE LogType = ${this.getQuotedQueryVar(DEFAULT_LOG_TYPE)}
+          AND TracedEntityId = ${this.getQuotedQueryVar(user.Id)}
+          ORDER BY CreatedDate DESC
+          LIMIT 1
+        `
+      )
+    );
+  }
+
   private getExpirationDate(startingDate: Date, durationExpression: string): Date {
-    const minutesInMilliseconds = 60 * 1000;
+    const oneMinuteInMilliseconds = 60 * 1000;
     let durationModifier = 0;
     if (durationExpression.endsWith('hr')) {
       const hours = Number(durationExpression.slice(0, durationExpression.length - 2));
-      durationModifier = hours * 60 * minutesInMilliseconds;
+      durationModifier = hours * 60 * oneMinuteInMilliseconds;
     } else if (durationExpression.endsWith('m')) {
-      durationModifier = Number(durationExpression.slice(0, durationExpression.length - 1)) * minutesInMilliseconds;
+      durationModifier = Number(durationExpression.slice(0, durationExpression.length - 1)) * oneMinuteInMilliseconds;
     } else {
       throw new SfError(`Invalid duration "${durationExpression}" supplied`);
     }
@@ -183,7 +172,34 @@ export default class Trace extends SfCommand<void> {
     return expirationDate;
   }
 
-  // from https://github.com/forcedotcom/salesforcedx-apex/blob/main/src/utils/authUtil.ts
+  private async createOrUpdateTrace(
+    baseTraceFlag: Record,
+    user: Record,
+    orgConnection: Connection,
+    existingDebugLevel: Record
+  ) {
+    if (baseTraceFlag.Id) {
+      this.log(`Updating TraceFlag for ${user.Username}, expires: ${new Date(baseTraceFlag.ExpirationDate)}`);
+      await orgConnection.tooling.update(TRACE_SOBJECT_NAME, baseTraceFlag);
+    } else if (existingDebugLevel !== null) {
+      this.log(
+        `No matching TraceFlag for user: ${user.Username}, setting one up using debug level: ${JSON.stringify(
+          existingDebugLevel
+        )}, expires: ${new Date(baseTraceFlag.ExpirationDate)}}`
+      );
+      await orgConnection.tooling.create(TRACE_SOBJECT_NAME, {
+        ...baseTraceFlag,
+        DebugLevelId: existingDebugLevel.Id,
+        LogType: DEFAULT_LOG_TYPE,
+        TracedEntityId: user.Id
+      });
+    }
+  }
+
+  /**
+   * from [authUtil](https://github.com/forcedotcom/salesforcedx-apex/blob/a0258ce90c3b63358ad2690e719493e3f5432f61/src/utils/authUtil.ts)
+   * in the salesforcedx-apex repo
+   **/
   private static escapeXml(data: string | undefined) {
     return data ? data.replace(/[<>&'"]/g, char => XML_CHAR_MAP[char]) : '';
   }
