@@ -7,7 +7,7 @@ This plugin was developed for the Joys Of Apex post [Authoring SF CLI Plugins](h
 It can be installed by running:
 
 ```bash
-echo y | sf plugins install @james.simone/sf-trace-plugin
+echo y | sf plugins install james.simone/sf-trace-plugin
 ```
 
 Or by adding `sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_allowlist.htm):
@@ -19,7 +19,7 @@ Or by adding `sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://de
 And then running:
 
 ```bash
-sf plugins install @james.simone/sf-trace-plugin
+sf plugins install james.simone/sf-trace-plugin
 ```
 
 Or by pointing to the GitHub repository itself during the install command:
