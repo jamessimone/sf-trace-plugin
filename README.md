@@ -1,6 +1,6 @@
 # SF Apex Trace Plugin
 
-This plugin was developed for the Joys Of Apex post [authoring SF plugins](https://jamessimone.net/blog/joys-of-apex/authoring-sf-plugins/), and it allows you to setup and maintain `TraceFlag` records for any Salesforce org you're authorized to using the SF CLI.
+This plugin was developed for the Joys Of Apex post [Authoring SF CLI Plugins](https://jamessimone.net/blog/joys-of-apex/authoring-sf-cli-plugins/), and it allows you to setup and maintain `TraceFlag` records for any Salesforce org you're authorized to using the SF CLI.
 
 ## Installation
 
