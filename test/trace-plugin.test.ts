@@ -20,20 +20,23 @@ type SalesforceRecord = {
 type TraceFlag = SalesforceRecord & { DebugLevelId: string | undefined; ExpirationDate: number; StartDate: number };
 
 class FakeDependencyMapper implements DependencyMapper {
+  public debugLevelName: string;
   public isAutoprocTrace = false;
-  public queriesMade: string[] = [];
-  public passedFlags: ExpectedFlags;
-  public username: string;
-  public traceDuration: string;
-
-  public matchingUser: SalesforceRecord | undefined = { Id: '005...' };
   public matchingDebugLevel: (SalesforceRecord & { DeveloperName: string }) | undefined = {
     DeveloperName: 'someName',
     Id: '7dl....'
   };
-  public matchingTraceFlag: SalesforceRecord | undefined = { Id: '7tf...' };
+  public matchingTraceFlag: (SalesforceRecord & { DebugLevelId: string | undefined }) | undefined = {
+    Id: '7tf...',
+    DebugLevelId: undefined
+  };
+  public matchingUser: SalesforceRecord | undefined = { Id: '005...' };
+  public passedFlags: ExpectedFlags;
+  public queriesMade: string[] = [];
+  public traceDuration: string;
   public updatedSObjectName: string;
   public updatedTraceFlag: TraceFlag;
+  public username: string;
 
   getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<Dependencies> {
     this.passedFlags = options.flags as ExpectedFlags;
@@ -69,7 +72,7 @@ class FakeDependencyMapper implements DependencyMapper {
           }
         })
       } as unknown as Org,
-      debugLevelName: 'someName',
+      debugLevelName: this.debugLevelName ?? 'someName',
       isAutoprocTrace: this.isAutoprocTrace,
       traceDuration: this.traceDuration,
       targetUser: this.username
@@ -127,7 +130,7 @@ describe('trace plugin', () => {
       `SELECT Id, DeveloperName FROM DebugLevel WHERE DeveloperName = '${depMapper.matchingDebugLevel?.DeveloperName}'`
     );
     expect(depMapper.queriesMade[2]).to.eq(
-      `SELECT Id
+      `SELECT Id, DebugLevelId
           FROM TraceFlag
           WHERE LogType = 'USER_DEBUG'
           AND TracedEntityId = '${depMapper.matchingUser?.Id}'
@@ -245,10 +248,20 @@ describe('trace plugin', () => {
   });
 
   it('updates the existing debug level for an active trace', async () => {
-    depMapper.matchingDebugLevel = { Id: '7dl000000000', DeveloperName: 'Some Other Debug Level' };
+    depMapper.debugLevelName = 'Some Other Debug Level';
+    depMapper.matchingDebugLevel = { Id: '7dl000000000', DeveloperName: depMapper.debugLevelName };
 
     await Trace.run();
 
     expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel.Id);
+  });
+
+  it('uses the same debug level for a trace when not specified', async () => {
+    expect(depMapper.debugLevelName).to.be.undefined;
+    depMapper.matchingTraceFlag = { DebugLevelId: '7dl0000000', Id: 'someId' };
+
+    await Trace.run();
+
+    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingTraceFlag.DebugLevelId);
   });
 });

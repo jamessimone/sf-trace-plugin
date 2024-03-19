@@ -77,7 +77,7 @@ export default class Trace extends SfCommand<void> {
     const existingTraceFlag = await this.getExistingTrace(user, orgConnection);
 
     const baseTraceFlag = {
-      DebugLevelId: existingDebugLevel.Id,
+      DebugLevelId: existingTraceFlag?.DebugLevelId ?? existingDebugLevel.Id,
       ExpirationDate: 0,
       Id: existingTraceFlag?.Id,
       StartDate: Date.now()
@@ -145,9 +145,9 @@ export default class Trace extends SfCommand<void> {
   }
 
   private async getExistingTrace(user: Record, orgConnection: Connection) {
-    return this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string }>(
+    return this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string; DebugLevelId: string }>(
       await orgConnection.tooling.query(
-        `SELECT Id
+        `SELECT Id, DebugLevelId
           FROM ${TRACE_SOBJECT_NAME}
           WHERE LogType = ${this.getQuotedQueryVar(DEFAULT_LOG_TYPE)}
           AND TracedEntityId = ${this.getQuotedQueryVar(user.Id)}
