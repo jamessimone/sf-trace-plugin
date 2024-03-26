@@ -1,0 +1,28 @@
+name: SF Trace Plugin PR tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '**/tsconfig.json'
+      - '.mocharc.json'
+      - 'README.md'
+      - 'Contributing.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'package.json'
+      - 'LICENSE'
+      - '.gitignore'
+      - '.npmrc'
+      - '.prettierrc'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.x'
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run test

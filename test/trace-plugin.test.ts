@@ -11,7 +11,7 @@ import {
 import { Org } from '@salesforce/core';
 
 import { Dependencies, DependencyMapper, ExpectedFlags } from '../core/dependencies/dependencyMapper.js';
-import Trace from '../core/commands/apex/trace.js';
+import Trace, { DEFAULT_DEBUG_LEVEL_NAME } from '../core/commands/apex/trace.js';
 
 type SalesforceRecord = {
   Id: string;
@@ -23,7 +23,7 @@ class FakeDependencyMapper implements DependencyMapper {
   public debugLevelName: string;
   public isAutoprocTrace = false;
   public matchingDebugLevel: (SalesforceRecord & { DeveloperName: string }) | undefined = {
-    DeveloperName: 'someName',
+    DeveloperName: DEFAULT_DEBUG_LEVEL_NAME,
     Id: '7dl....'
   };
   public matchingTraceFlag: (SalesforceRecord & { DebugLevelId: string | undefined }) | undefined = {
@@ -34,13 +34,22 @@ class FakeDependencyMapper implements DependencyMapper {
   public passedFlags: ExpectedFlags;
   public queriesMade: string[] = [];
   public traceDuration: string;
-  public updatedSObjectName: string;
-  public updatedTraceFlag: TraceFlag;
+  public updatedRecordMap: Record<string, SalesforceRecord> = {
+    DebugLevel: { Id: '' },
+    TraceFlag: { Id: '' }
+  };
   public username: string;
 
   getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<Dependencies> {
     this.passedFlags = options.flags as ExpectedFlags;
     this.traceDuration = this.traceDuration ?? this.passedFlags['trace-duration'].default?.toString();
+
+    const setUpdatedRecordMap = (sObjectName: string, record: SalesforceRecord) => {
+      if (!record.Id) {
+        record.Id = 'someId';
+      }
+      this.updatedRecordMap[sObjectName] = record;
+    };
 
     return Promise.resolve({
       org: {
@@ -51,10 +60,7 @@ class FakeDependencyMapper implements DependencyMapper {
             return this.matchingUser;
           },
           tooling: {
-            create: (sObjectName: string, record: TraceFlag) => {
-              this.updatedSObjectName = sObjectName;
-              this.updatedTraceFlag = record;
-            },
+            create: setUpdatedRecordMap,
             query: (query: string) => {
               this.queriesMade.push(query);
               let matchingRecord = {} as object | undefined;
@@ -65,14 +71,11 @@ class FakeDependencyMapper implements DependencyMapper {
               }
               return { totalSize: matchingRecord ? 1 : 0, records: matchingRecord ? [matchingRecord] : null };
             },
-            update: (sObjectName: string, record: TraceFlag) => {
-              this.updatedSObjectName = sObjectName;
-              this.updatedTraceFlag = record;
-            }
+            update: setUpdatedRecordMap
           }
         })
       } as unknown as Org,
-      debugLevelName: this.debugLevelName ?? 'someName',
+      debugLevelName: this.debugLevelName ?? DEFAULT_DEBUG_LEVEL_NAME,
       isAutoprocTrace: this.isAutoprocTrace,
       traceDuration: this.traceDuration,
       targetUser: this.username
@@ -138,10 +141,10 @@ describe('trace plugin', () => {
           LIMIT 1
         `
     );
-    expect(depMapper.updatedSObjectName).to.eq('TraceFlag');
-    expect(depMapper.updatedTraceFlag.StartDate).to.be.lessThan(depMapper.updatedTraceFlag.ExpirationDate);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    expect(updatedTraceFlag.StartDate).to.be.lessThan(updatedTraceFlag.ExpirationDate);
     const nowishDate = new Date(nowish);
-    const expirationate = new Date(depMapper.updatedTraceFlag.ExpirationDate);
+    const expirationate = new Date(updatedTraceFlag.ExpirationDate);
     expirationate.setSeconds(0);
     expirationate.setMilliseconds(0);
     nowishDate.setSeconds(0);
@@ -155,7 +158,8 @@ describe('trace plugin', () => {
 
     await Trace.run();
 
-    const expirationate = new Date(depMapper.updatedTraceFlag.ExpirationDate);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    const expirationate = new Date(updatedTraceFlag.ExpirationDate);
     expirationate.setSeconds(0);
     expirationate.setMilliseconds(0);
     const nowishDate = new Date(nowish);
@@ -170,7 +174,8 @@ describe('trace plugin', () => {
 
     await Trace.run();
 
-    const expirationate = new Date(depMapper.updatedTraceFlag.ExpirationDate);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    const expirationate = new Date(updatedTraceFlag.ExpirationDate);
     expirationate.setSeconds(0);
     expirationate.setMilliseconds(0);
     const nowishDate = new Date(nowish);
@@ -214,9 +219,8 @@ describe('trace plugin', () => {
 
     await Trace.run();
 
-    expect(depMapper.updatedSObjectName).to.eq('TraceFlag');
-    expect(depMapper.updatedTraceFlag).not.to.be.undefined;
-    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel?.Id);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    expect(updatedTraceFlag?.DebugLevelId).to.eq(depMapper.matchingDebugLevel?.Id);
   });
 
   it('throws an error for invalid user', async () => {
@@ -233,18 +237,19 @@ describe('trace plugin', () => {
     expect(err.message).to.eq(`User not found: test@user.com`);
   });
 
-  it('throws an error for invalid debug level', async () => {
+  it('creates debug level when no matching results', async () => {
     depMapper.matchingDebugLevel = undefined;
-    let err: Error;
 
-    try {
-      await Trace.run();
-      err = new Error('Fail');
-    } catch (error: unknown) {
-      err = error as Error;
-    }
+    await Trace.run();
 
-    expect(err.message).to.eq(`DebugLevel not found: someName`);
+    const createdDebugLevel = depMapper.updatedRecordMap.DebugLevel as SalesforceRecord & {
+      ApexCode: string;
+      DeveloperName: string;
+      MasterLabel: string;
+    };
+    expect(createdDebugLevel.ApexCode).to.eq('FINE');
+    expect(createdDebugLevel.DeveloperName).to.eq(DEFAULT_DEBUG_LEVEL_NAME);
+    expect(createdDebugLevel.MasterLabel).to.eq(`Created by sf-trace-plugin`);
   });
 
   it('updates the existing debug level for an active trace', async () => {
@@ -253,7 +258,8 @@ describe('trace plugin', () => {
 
     await Trace.run();
 
-    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel.Id);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    expect(updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingDebugLevel.Id);
   });
 
   it('uses the same debug level for a trace when not specified', async () => {
@@ -262,6 +268,7 @@ describe('trace plugin', () => {
 
     await Trace.run();
 
-    expect(depMapper.updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingTraceFlag.DebugLevelId);
+    const updatedTraceFlag = depMapper.updatedRecordMap.TraceFlag as TraceFlag;
+    expect(updatedTraceFlag.DebugLevelId).to.eq(depMapper.matchingTraceFlag.DebugLevelId);
   });
 });

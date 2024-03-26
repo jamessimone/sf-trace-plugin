@@ -7,7 +7,7 @@ import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencie
 /**
  * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
  */
-const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
+export const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
 const DEFAULT_LOG_TYPE = 'USER_DEBUG';
 const TRACE_SOBJECT_NAME = 'TraceFlag';
 const XML_CHAR_MAP: { [index: string]: string } = {
@@ -123,9 +123,16 @@ export default class Trace extends SfCommand<void> {
       user.Username = traceUser;
     }
 
-    const existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
+    let existingDebugLevel = this.getSingleOrDefault(fallbackDebugLevelRes);
     if (!existingDebugLevel?.Id) {
-      throw new SfError(`DebugLevel not found: ${debugLevelName}`);
+      existingDebugLevel = {
+        ApexCode: 'FINE',
+        DeveloperName: debugLevelName,
+        MasterLabel: 'Created by sf-trace-plugin'
+      };
+      this.log(`Creating default DebugLevel for ${user.Username}: ${JSON.stringify(existingDebugLevel)}`);
+      const saveResult = await orgConnection.tooling.create('DebugLevel', existingDebugLevel);
+      existingDebugLevel.Id = saveResult?.id;
     }
     return { existingDebugLevel, user } as { existingDebugLevel: Record; user: Record & { Username: string } };
   }
@@ -145,7 +152,7 @@ export default class Trace extends SfCommand<void> {
   }
 
   private async getExistingTrace(user: Record, orgConnection: Connection) {
-    return this.getSingleOrDefault<{ StartDate: number; ExpirationDate: number; Id: string; DebugLevelId: string }>(
+    return this.getSingleOrDefault<{ DebugLevelId: String; ExpirationDate: number; Id: string; StartDate: number }>(
       await orgConnection.tooling.query(
         `SELECT Id, DebugLevelId
           FROM ${TRACE_SOBJECT_NAME}
