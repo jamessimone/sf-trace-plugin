@@ -10,7 +10,7 @@ import {
 } from '@oclif/core/lib/interfaces/parser.js';
 import { Org } from '@salesforce/core';
 
-import { Dependencies, DependencyMapper, ExpectedFlags } from '../core/dependencies/dependencyMapper.js';
+import { TraceDependencies, DependencyMapper, ExpectedTraceFlags } from '../core/dependencies/dependencyMapper.js';
 import Trace, { DEFAULT_DEBUG_LEVEL_NAME } from '../core/commands/apex/trace.js';
 
 type SalesforceRecord = {
@@ -19,7 +19,7 @@ type SalesforceRecord = {
 
 type TraceFlag = SalesforceRecord & { DebugLevelId: string | undefined; ExpirationDate: number; StartDate: number };
 
-class FakeDependencyMapper implements DependencyMapper {
+class FakeDependencyMapper implements DependencyMapper<TraceDependencies> {
   public debugLevelName: string;
   public isAutoprocTrace = false;
   public matchingDebugLevel: (SalesforceRecord & { DeveloperName: string }) | undefined = {
@@ -31,7 +31,7 @@ class FakeDependencyMapper implements DependencyMapper {
     DebugLevelId: undefined
   };
   public matchingUser: SalesforceRecord | undefined = { Id: '005...' };
-  public passedFlags: ExpectedFlags;
+  public passedFlags: ExpectedTraceFlags;
   public queriesMade: string[] = [];
   public traceDuration: string;
   public updatedRecordMap: Record<string, SalesforceRecord> = {
@@ -40,8 +40,8 @@ class FakeDependencyMapper implements DependencyMapper {
   };
   public username: string;
 
-  getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<Dependencies> {
-    this.passedFlags = options.flags as ExpectedFlags;
+  getDependencies(options: Input<FlagOutput, FlagOutput, ArgOutput>): Promise<TraceDependencies> {
+    this.passedFlags = options.flags as ExpectedTraceFlags;
     this.traceDuration = this.traceDuration ?? this.passedFlags['trace-duration'].default?.toString();
 
     const setUpdatedRecordMap = (sObjectName: string, record: SalesforceRecord) => {
