@@ -1,7 +1,7 @@
 {
   "name": "sf-trace-plugin",
   "description": "A plugin that allows you to update trace flags in a target salesforce org",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "dependencies": {
     "@salesforce/core": "6.7.1",
     "@salesforce/sf-plugins-core": "7.1.15"

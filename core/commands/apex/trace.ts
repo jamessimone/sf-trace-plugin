@@ -2,7 +2,14 @@ import { Connection, SfError } from '@salesforce/core';
 import { Flags, SfCommand } from '@salesforce/sf-plugins-core';
 import { QueryResult, Record } from 'jsforce';
 
-import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencies/dependencyMapper.js';
+import {
+  ActualTraceMapper,
+  DependencyMapper,
+  escapeXml,
+  ExpectedTraceFlags,
+  getQuotedQueryVar,
+  TraceDependencies
+} from '../../dependencies/dependencyMapper.js';
 
 /**
  * > One SFDC_DevConsole debug level is shared by all DEVELOPER_LOG trace flags in your org
@@ -10,16 +17,9 @@ import { ActualMapper, DependencyMapper, ExpectedFlags } from '../../dependencie
 export const DEFAULT_DEBUG_LEVEL_NAME = 'SFDC_DevConsole';
 const DEFAULT_LOG_TYPE = 'USER_DEBUG';
 const TRACE_SOBJECT_NAME = 'TraceFlag';
-const XML_CHAR_MAP: { [index: string]: string } = {
-  '<': '&lt;',
-  '>': '&gt;',
-  '&': '&amp;',
-  '"': '&quot;',
-  "'": '&apos;'
-};
 
 export default class Trace extends SfCommand<void> {
-  public static dependencyMapper: DependencyMapper;
+  public static dependencyMapper: DependencyMapper<TraceDependencies>;
 
   public static readonly flags = {
     'debug-level-name': Flags.string({
@@ -56,11 +56,11 @@ export default class Trace extends SfCommand<void> {
       relationships: [{ type: 'none', flags: ['is-autoproc-trace'] }],
       summary: 'The username of the user the trace flag should be set for, when not the currently authorized user'
     })
-  } as ExpectedFlags;
+  } as ExpectedTraceFlags;
 
   public async run(): Promise<void> {
     if (!Trace.dependencyMapper) {
-      Trace.dependencyMapper = new ActualMapper(this.argv, this.config);
+      Trace.dependencyMapper = new ActualTraceMapper(this.argv, this.config);
     }
 
     const { debugLevelName, isAutoprocTrace, org, traceDuration, targetUser } =
@@ -92,7 +92,7 @@ export default class Trace extends SfCommand<void> {
     orgConnection: Connection,
     targetUser?: string
   ) {
-    let traceUser = Trace.escapeXml(targetUser);
+    let traceUser = escapeXml(targetUser);
     let whereField = 'Username';
     if (!traceUser) {
       traceUser = orgConnection.getUsername() as string;
@@ -104,12 +104,10 @@ export default class Trace extends SfCommand<void> {
 
     const [user, fallbackDebugLevelRes] = await Promise.all([
       orgConnection.singleRecordQuery<Record>(
-        `SELECT Id FROM User WHERE ${whereField} = ${this.getQuotedQueryVar(traceUser)}`
+        `SELECT Id FROM User WHERE ${whereField} = ${getQuotedQueryVar(traceUser)}`
       ),
       orgConnection.tooling.query(
-        `SELECT Id, DeveloperName FROM DebugLevel WHERE DeveloperName = ${this.getQuotedQueryVar(
-          Trace.escapeXml(debugLevelName)
-        )}`
+        `SELECT Id, DeveloperName FROM DebugLevel WHERE DeveloperName = ${getQuotedQueryVar(escapeXml(debugLevelName))}`
       )
     ]).catch(() => {
       // "singleRecordQuery" isn't Promise-like, so we can't add .catch() to it directly
@@ -130,18 +128,11 @@ export default class Trace extends SfCommand<void> {
         DeveloperName: debugLevelName,
         MasterLabel: 'Created by sf-trace-plugin'
       };
-      this.log(`Creating default DebugLevel for ${user.Username}: ${JSON.stringify(existingDebugLevel)}`);
+      this.log(`sf-trace: Creating default DebugLevel for ${user.Username}: ${JSON.stringify(existingDebugLevel)}`);
       const saveResult = await orgConnection.tooling.create('DebugLevel', existingDebugLevel);
       existingDebugLevel.Id = saveResult?.id;
     }
     return { existingDebugLevel, user } as { existingDebugLevel: Record; user: Record & { Username: string } };
-  }
-
-  private getQuotedQueryVar(val: string | undefined): string {
-    if (!val) {
-      throw new SfError('Cannot query an undefined value');
-    }
-    return `'${val}'`;
   }
 
   private getSingleOrDefault<T extends Record>(toolingApiResult: QueryResult<T>) {
@@ -156,8 +147,8 @@ export default class Trace extends SfCommand<void> {
       await orgConnection.tooling.query(
         `SELECT Id, DebugLevelId
           FROM ${TRACE_SOBJECT_NAME}
-          WHERE LogType = ${this.getQuotedQueryVar(DEFAULT_LOG_TYPE)}
-          AND TracedEntityId = ${this.getQuotedQueryVar(user.Id)}
+          WHERE LogType = ${getQuotedQueryVar(DEFAULT_LOG_TYPE)}
+          AND TracedEntityId = ${getQuotedQueryVar(user.Id)}
           ORDER BY CreatedDate DESC
           LIMIT 1
         `
@@ -191,11 +182,11 @@ export default class Trace extends SfCommand<void> {
     existingDebugLevel: Record
   ) {
     if (baseTraceFlag.Id) {
-      this.log(`Updating TraceFlag for ${user.Username}, expires: ${new Date(baseTraceFlag.ExpirationDate)}`);
+      this.log(`sf-trace: Updating TraceFlag for ${user.Username}, expires: ${new Date(baseTraceFlag.ExpirationDate)}`);
       await orgConnection.tooling.update(TRACE_SOBJECT_NAME, baseTraceFlag);
     } else if (existingDebugLevel !== null) {
       this.log(
-        `No matching TraceFlag for user: ${user.Username}, setting one up using debug level: ${JSON.stringify(
+        `sf-trace: No matching TraceFlag for user: ${user.Username}, setting one up using debug level: ${JSON.stringify(
           existingDebugLevel
         )}, expires: ${new Date(baseTraceFlag.ExpirationDate)}}`
       );
@@ -205,13 +196,5 @@ export default class Trace extends SfCommand<void> {
         TracedEntityId: user.Id
       });
     }
-  }
-
-  /**
-   * from [authUtil](https://github.com/forcedotcom/salesforcedx-apex/blob/a0258ce90c3b63358ad2690e719493e3f5432f61/src/utils/authUtil.ts)
-   * in the salesforcedx-apex repo
-   **/
-  private static escapeXml(data: string | undefined) {
-    return data ? data.replace(/[<>&'"]/g, char => XML_CHAR_MAP[char]) : '';
   }
 }
