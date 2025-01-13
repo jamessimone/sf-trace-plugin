@@ -108,7 +108,7 @@ describe('trace plugin', () => {
     const traceDuration: OptionFlag<string, CustomOptions> = depMapper.passedFlags['trace-duration'];
     expect(traceDuration.required).to.be.false;
     expect(traceDuration.char).to.eq('d');
-    expect(traceDuration.default).to.eq('1hr');
+    expect(traceDuration.default).to.eq('24hr');
 
     const targetOrg: OptionFlag<Org, CustomOptions> = depMapper.passedFlags['target-org'];
     expect(targetOrg.required).to.be.false;
@@ -149,7 +149,7 @@ describe('trace plugin', () => {
     expirationate.setMilliseconds(0);
     nowishDate.setSeconds(0);
     nowishDate.setMilliseconds(0);
-    expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60);
+    expect(expirationate.getTime()).to.eq(nowishDate.getTime() + 1000 * 60 * 60 * 24);
   });
 
   it('updates an existing trace flag for the current user with minute duration', async () => {

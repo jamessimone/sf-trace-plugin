@@ -45,9 +45,9 @@ export default class Trace extends SfCommand<void> {
     'trace-duration': Flags.string({
       char: 'd',
       description: 'How long the trace is active for',
-      default: '1hr',
+      default: '24hr',
       required: false,
-      summary: 'Defaults to 1 hour, max of 24 hours. You can set duration in minutes (eg 30m) or in hours (eg 2h)'
+      summary: 'Defaults to 24 hours, which is also the max. You can set duration in minutes (eg 30m) or in hours (eg 2hr)'
     }),
     'target-user': Flags.string({
       char: 'u',
