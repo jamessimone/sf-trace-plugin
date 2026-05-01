@@ -7,24 +7,20 @@ This plugin was developed for the Joys Of Apex post [Authoring SF CLI Plugins](h
 It can be installed by running:
 
 ```bash
-echo y | sf plugins install jamessimone/sf-trace-plugin
-```
-
-Or by adding `sf-trace-plugin` to your [unsignedPluginAllowlist.json](https://developer.salesforce.com/docs/atlas.en-us.sfdx_setup.meta/sfdx_setup/sfdx_setup_allowlist.htm):
-
-```json
-["jamessimone/sf-trace-plugin"]
-```
-
-And then running:
-
-```bash
+# sf plugins trust allowlist commands were added to the CLI
+# in version 2.134.1 - if you don't have them, upgrade your CLI version first
+sf plugins trust allowlist add -n jamessimone/sf-trace-plugin
 sf plugins install jamessimone/sf-trace-plugin
 ```
+
+For more info on the unsigned plugin allowlist, refer to the `trust` [CLI documentation](https://github.com/salesforcecli/plugin-trust#commands).
 
 Or by pointing to the GitHub repository itself during the install command:
 
 ```bash
+# sf plugins trust allowlist commands were added to the CLI
+# in version 2.134.1 - if you don't have them, upgrade your CLI version first
+sf plugins trust allowlist add -n jamessimone/sf-trace-plugin
 sf plugins install https://github.com/jamessimone/sf-trace-plugin
 ```
 
