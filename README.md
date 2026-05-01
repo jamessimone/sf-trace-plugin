@@ -9,7 +9,7 @@ It can be installed by running:
 ```bash
 # sf plugins trust allowlist commands were added to the CLI
 # in version 2.134.1 - if you don't have them, upgrade your CLI version first
-sf plugins trust allowlist add -n jamessimone/sf-trace-plugin
+sf plugins trust allowlist add -n sf-trace-plugin
 sf plugins install jamessimone/sf-trace-plugin
 ```
 
@@ -20,7 +20,7 @@ Or by pointing to the GitHub repository itself during the install command:
 ```bash
 # sf plugins trust allowlist commands were added to the CLI
 # in version 2.134.1 - if you don't have them, upgrade your CLI version first
-sf plugins trust allowlist add -n jamessimone/sf-trace-plugin
+sf plugins trust allowlist add -n sf-trace-plugin
 sf plugins install https://github.com/jamessimone/sf-trace-plugin
 ```
 
